@@ -55,7 +55,28 @@ public class Program
                 line.StrokeThickness = 2;
                 canvas.Children.Add(line);
             }
-            
+
+            var cp2 = geom.ToPolygons().Skip(1).First();
+            var xs = new List<double>();
+            var ys = new List<double>();
+            foreach (var d in cp2.Chunk(2))
+            {
+                xs.Add(d[0]);
+                ys.Add(d[1]);
+            }
+
+
+            var hl = PolygonFiller.FillPolygon((int)canvas.ActualWidth, (int)canvas.ActualHeight, xs.ToArray(), ys.ToArray()).ToArray();
+            foreach (var valueTuple in hl)
+            {
+                var l = new Line();
+                l.X1 = valueTuple.x1;
+                l.X2 = valueTuple.x2;
+                l.Y1 = valueTuple.y;
+                l.Y2 = valueTuple.y;
+                l.Stroke = Brushes.Magenta;
+                canvas.Children.Add(l);
+            }
         };
         System.Windows.Application.Current.Run(window);
     }
