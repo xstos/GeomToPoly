@@ -17,7 +17,7 @@ public class Program
         System.Windows.FontStyle fontStyle = FontStyles.Normal;
         FontWeight fontWeight = FontWeights.Medium;
 
-        var Text = "?";
+        var Text = "P";
         var FontSize = 800;
         var Font = new FontFamily("Sans MS");
         var cultureInfo = CultureInfo.GetCultureInfo("en-us");
@@ -55,27 +55,45 @@ public class Program
                 line.StrokeThickness = 2;
                 canvas.Children.Add(line);
             }
+            var height = (int)canvas.ActualHeight;
+            
+            var hLineInfo = new HLineInfo(height);
 
-            var cp2 = geom.ToPolygons().Skip(1).First();
-            var xs = new List<double>();
-            var ys = new List<double>();
-            foreach (var d in cp2.Chunk(2))
+            var cp2 = geom.ToPolygons();
+            foreach (var poly in cp2)
             {
-                xs.Add(d[0]);
-                ys.Add(d[1]);
+                var xs = new List<double>();
+                var ys = new List<double>();
+                foreach (var d in poly.Chunk(2))
+                {
+                    xs.Add(d[0]);
+                    ys.Add(d[1]);
+                }
+                
+                var hl = PolygonFiller.FillPolygon((int)canvas.ActualWidth, height, xs.ToArray(), ys.ToArray(), hLineInfo).ToArray();
+                
             }
-
-
-            var hl = PolygonFiller.FillPolygon((int)canvas.ActualWidth, (int)canvas.ActualHeight, xs.ToArray(), ys.ToArray()).ToArray();
-            foreach (var valueTuple in hl)
+            void line2(int x1, int y1, int x2, int y2)
             {
                 var l = new Line();
-                l.X1 = valueTuple.x1;
-                l.X2 = valueTuple.x2;
-                l.Y1 = valueTuple.y;
-                l.Y2 = valueTuple.y;
+                l.X1 = x1;
+                l.X2 = x2;
+                l.Y1 = y1;
+                l.Y2 = y2;
                 l.Stroke = Brushes.Magenta;
                 canvas.Children.Add(l);
+            }
+            for (int i = 0; i < hLineInfo.UsedRowIndexes.Count; i++)
+            {
+                var y = hLineInfo.UsedRowIndexes[i];
+                var verts = hLineInfo.Rows[y];
+                verts.Sort();
+                foreach (var c in verts.Chunk(2))
+                {
+                    var (x1, x2) = (c[0], c[1]);
+                    line2(x1,y,x2,y);
+                }
+                verts.Clear();
             }
         };
         System.Windows.Application.Current.Run(window);

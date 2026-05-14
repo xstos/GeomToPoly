@@ -2,15 +2,37 @@
 using System.Collections.Generic;
 
 namespace GeomToPoly;
-public static class PolygonFiller
+internal struct HLineInfo
 {
+    internal List<int>[] Rows;
+    internal List<int> UsedRowIndexes;
+    public HLineInfo(int height)
+    {
+        Rows = new List<int>[height];
+        for (int i = 0; i < height; i++)
+        {
+            Rows[i] = new List<int>(16);
+        }
+        UsedRowIndexes = new List<int>(height);
+    }
+
+    public void Push(int y, int x1, int x2)
+    {
+        Rows[y].AddRange([x1,x2]);
+        UsedRowIndexes.Add(y);
+    }
+}
+internal static class PolygonFiller
+{
+
+    
     /// <summary>
     /// Fills a polygon on the given bitmap using the efficient scanline algorithm. https://alienryderflex.com/polygon_fill/
     /// </summary>
     /// <param name="bitmap">The bitmap to draw on.</param>
     /// <param name="polyX">Array of X coordinates of polygon vertices.</param>
     /// <param name="polyY">Array of Y coordinates of polygon vertices.</param>
-    public static IEnumerable<(int y, int x1, int x2)> FillPolygon(int width,int height, double[] polyX, double[] polyY)
+    internal static IEnumerable<(int y, int x1, int x2)> FillPolygon(int width,int height, double[] polyX, double[] polyY, HLineInfo inf)
     {
         int polyCorners = polyX.Length;
         if (polyCorners < 3)
@@ -36,7 +58,7 @@ public static class PolygonFiller
         int startY = Math.Max(imageTop, (int)Math.Ceiling(minY));
         int endY = Math.Min(imageBottom - 1, (int)Math.Floor(maxY));
 
-        List<int> nodeX = new List<int>();
+        var nodeX = new List<int>();
 
         for (int pixelY = startY; pixelY <= endY; pixelY++)
         {
@@ -62,21 +84,7 @@ public static class PolygonFiller
                 j = i;
             }
             var count = nodeX.Count;
-
-            // Sort nodeX using bubble sort (as in original algorithm)
-            int index = 0;
-            while (index < count - 1)
-            {
-                if (nodeX[index] > nodeX[index + 1])
-                {
-                    (nodeX[index], nodeX[index + 1]) = (nodeX[index + 1], nodeX[index]);
-                    if (index > 0) index--;
-                }
-                else
-                {
-                    index++;
-                }
-            }
+            nodeX.Sort();
 
             // Fill between pairs of nodes
             for (int i = 0; i < count; i += 2)
@@ -90,6 +98,7 @@ public static class PolygonFiller
                 if (xEnd <= imageLeft) continue;
                 if (xStart < imageLeft) xStart = imageLeft;
                 if (xEnd > imageRight) xEnd = imageRight;
+                inf.Push(pixelY,xStart,xEnd);
                 yield return (pixelY, xStart, xEnd);
             }
         }
