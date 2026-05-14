@@ -18,22 +18,31 @@ public class Program
         FontWeight fontWeight = FontWeights.Medium;
 
         var Text = "P";
-        var FontSize = 800;
+        var FontSize = 400;
         var Font = new FontFamily("Sans MS");
         var cultureInfo = CultureInfo.GetCultureInfo("en-us");
         var typeface = new Typeface(Font, fontStyle, fontWeight, FontStretches.Normal);
-        var formattedText = new FormattedText(Text, cultureInfo, FlowDirection.LeftToRight, typeface, FontSize,
-            System.Windows.Media.Brushes.Black, // This brush does not matter since we use the geometry of the text.
-            1.0
-        );
+        FormattedText formattedText;
+        
         var window = new Window();
         var grid = new Grid();
         var canvas = new Canvas();
         grid.Children.Add(canvas);
         window.Content = grid;
-
-        window.Loaded += (sender, args) =>
+        window.TextInput += (sender, args) =>
         {
+            PaintLetter(args.Text);
+        };
+        window.Loaded += (sender, args) => { PaintLetter("?"); };
+        System.Windows.Application.Current.Run(window);
+
+        void PaintLetter(string Text)
+        {
+            canvas.Children.Clear();
+            formattedText = new FormattedText(Text, cultureInfo, FlowDirection.LeftToRight, typeface, FontSize,
+                System.Windows.Media.Brushes.Black, // This brush does not matter since we use the geometry of the text.
+                1.0
+            );
             canvas.Background=Brushes.DarkGreen;
             var geom = formattedText.BuildGeometry(new System.Windows.Point(0, 0));
 
@@ -95,7 +104,6 @@ public class Program
                 }
                 verts.Clear();
             }
-        };
-        System.Windows.Application.Current.Run(window);
+        }
     }
 }
