@@ -1,4 +1,5 @@
-﻿using System.Windows.Media;
+﻿using System.Windows;
+using System.Windows.Media;
 using System.Windows.Shapes;
 using TSeg = (double, double, double, double);
 namespace GeomToPoly;
@@ -56,7 +57,7 @@ public static class GeomToPoly
             }
         }
     }
-    
+
     public static IEnumerable<IEnumerable<double>> ToPolygons(this Geometry geometry)
     {
         return geometry.GetFigures().Select(ToPolygon);

@@ -1,4 +1,5 @@
 ﻿using System.Globalization;
+using System.Net;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -8,21 +9,97 @@ using System.Windows.Shapes;
 
 namespace GeomToPoly;
 
+internal struct Glyph
+{
+    internal Rect Bounds;
+    internal Polygon[] Shapes;
+}
+
+internal struct Polygon
+{
+    internal double[] x;
+    internal double[] y;
+    internal Rect Bounds;
+
+    internal void Shift(double xshift, double yshift)
+    {
+        for (int i = 0; i < x.Length; i++)
+        {
+            x[i] += xshift;
+            y[i] += yshift;
+        }
+    }
+    internal static Polygon New(IEnumerable<double> poly)
+    {
+        var ret = new Polygon();
+        var xs = new List<double>();
+        var ys = new List<double>();
+        double minx=double.MaxValue, miny=double.MaxValue, maxx=double.MinValue, maxy=double.MinValue, offsetX = 0, offsetY = 0;
+        foreach (var d in poly.Chunk(2))
+        {
+            var x = d[0];
+            var y = d[1];
+            minx = x < minx ? x : minx;
+            miny = y < miny ? y : miny;
+            maxx = x > maxx ? x : maxx;
+            maxy = y > maxy ? y : maxy;
+        }
+
+        offsetX = minx < 0 ? -minx : 0;
+        offsetY = miny < 0 ? -miny : 0;
+        
+        foreach (var d in poly.Chunk(2))
+        {
+            var x = d[0];
+            var y = d[1];
+            xs.Add(x+offsetX);
+            ys.Add(y+offsetY);
+        }
+        
+        ret.x = xs.ToArray();
+        ret.y = ys.ToArray();
+        ret.Bounds = new Rect(new Point(minx, miny), new Point(maxx, maxy));
+        ret.Bounds.Offset(offsetX,offsetY);
+        
+        return ret;
+    }
+}
 public class Program
 {
     [STAThread]
     public static void Main()
     {
+        var lines = new WebClient().DownloadString("https://www.gutenberg.org/cache/epub/730/pg730.txt")
+            .ReplaceLineEndings("█")
+            .Split('█');
+        var widest = lines.Max(l => l.Length);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            lines[i] = lines[i].PadRight(widest);
+        }
+
+        
         var app = new Application();
-        System.Windows.FontStyle fontStyle = FontStyles.Normal;
-        FontWeight fontWeight = FontWeights.Medium;
 
         var Text = "P";
-        var FontSize = 400;
-        var Font = new FontFamily("Sans MS");
-        var cultureInfo = CultureInfo.GetCultureInfo("en-us");
-        var typeface = new Typeface(Font, fontStyle, fontWeight, FontStretches.Normal);
+        var FontSize = 20;
+        var typeface = new Typeface(new FontFamily("Jetbrains Mono"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
         FormattedText formattedText;
+        
+        Glyph MakeGlyph(char c)
+        {
+            var ft = new FormattedText(c+"", CultureInfo.GetCultureInfo("en-us"), FlowDirection.LeftToRight, typeface, FontSize, Brushes.White, 1.0);
+            var geom = ft.BuildGeometry(new Point(0, 0)).GetFlattenedPathGeometry(0.01, ToleranceType.Relative);
+            Glyph g = new Glyph();
+            g.Shapes = geom.ToPolygons().Select(Polygon.New).ToArray();
+            foreach (var s in g.Shapes)
+            {
+                g.Bounds.Union(s.Bounds);
+            }
+            return g;
+        }
+
+        var box = MakeGlyph('█');
         
         var window = new Window();
         var grid = new Grid();
@@ -33,17 +110,25 @@ public class Program
         {
             PaintLetter(args.Text);
         };
-        window.Loaded += (sender, args) => { PaintLetter("?"); };
+        window.Loaded += (sender, args) =>
+        {
+            var (canvasWidth, canvasHeight) = ((int)canvas.ActualWidth, (int)canvas.ActualHeight);
+            var numCols = canvasWidth / (int)Math.Round(box.Bounds.Width,MidpointRounding.AwayFromZero);
+            var numRows = canvasHeight / (int)Math.Round(box.Bounds.Height,MidpointRounding.AwayFromZero);
+            PaintLetter("?");
+        };
         System.Windows.Application.Current.Run(window);
-
+        
         void PaintLetter(string Text)
         {
+            var teststr =
+                @" █ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890~!@#$%^&*()_+`-=[];',./{}:""<>?|";
             canvas.Children.Clear();
-            formattedText = new FormattedText(Text, cultureInfo, FlowDirection.LeftToRight, typeface, FontSize,
+            formattedText = new FormattedText(Text+teststr, CultureInfo.GetCultureInfo("en-us"), FlowDirection.LeftToRight, typeface, FontSize,
                 System.Windows.Media.Brushes.Black, // This brush does not matter since we use the geometry of the text.
                 1.0
             );
-            canvas.Background=Brushes.DarkGreen;
+            canvas.Background=Brushes.Black;
             var geom = formattedText.BuildGeometry(new System.Windows.Point(0, 0));
 
             var smoothPoly = geom.ToPolygons().ToLineSegments().Select(s=>s.ToLine());
@@ -51,7 +136,7 @@ public class Program
             {
                 line.Stroke = Brushes.White;
                 line.StrokeThickness = 2;
-                canvas.Children.Add(line);
+                //canvas.Children.Add(line);
             }
             geom.Transform = new TranslateTransform(400,0);
             geom = geom.GetFlattenedPathGeometry(0.01, ToleranceType.Relative);
@@ -62,13 +147,15 @@ public class Program
             {
                 line.Stroke = Brushes.Yellow;
                 line.StrokeThickness = 2;
-                canvas.Children.Add(line);
+                //canvas.Children.Add(line);
             }
             var height = (int)canvas.ActualHeight;
             
             var hLineInfo = new HLineInfo(height);
-
-            var cp2 = geom.ToPolygons();
+ 
+            var geom2 = formattedText.BuildGeometry(new System.Windows.Point(0, 0)).GetFlattenedPathGeometry(0.01, ToleranceType.Relative);
+            
+            var cp2 = geom2.ToPolygons();
             foreach (var poly in cp2)
             {
                 var xs = new List<double>();
@@ -89,7 +176,7 @@ public class Program
                 l.X2 = x2;
                 l.Y1 = y1;
                 l.Y2 = y2;
-                l.Stroke = Brushes.Magenta;
+                l.Stroke = Brushes.White;
                 canvas.Children.Add(l);
             }
             for (int i = 0; i < hLineInfo.UsedRowIndexes.Count; i++)
