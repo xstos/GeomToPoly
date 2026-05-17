@@ -140,7 +140,8 @@ public class Program
         var grid = new Grid();
         var canvas = new Canvas();
         canvas.Background=Brushes.Black;
-        grid.Children.Add(canvas);
+        //grid.Children.Add(canvas);
+        grid.Children.Add(new FastPixels());
         window.Content = grid;
         window.TextInput += (sender, args) =>
         {

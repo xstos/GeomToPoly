@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-public partial class HwndSource2Control
+public partial class FastPixels
 {
     const int CS_VREDRAW = 0x1;
     const int CS_HREDRAW = 0x2;
@@ -38,26 +38,20 @@ public partial class HwndSource2Control
     [StructLayout(LayoutKind.Sequential)]
     struct BITMAPINFO
     {
-        public BITMAPINFOHEADER bmiHeader;
-
-        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 256)]
-        public uint[] bmiColors;
+        public BITMAPINFOHEADER biHeader;
+        public int biColors;
     }
-
-    [DllImport("gdi32.dll")]
-    static extern int SetDIBitsToDevice(
-        IntPtr hdc,
-        int xDest,
-        int yDest,
-        int dwWidth,
-        int dwHeight,
-        int xSrc,
-        int ySrc,
-        uint uStartScan,
-        uint cScanLines,
-        IntPtr lpvBits,
-        ref BITMAPINFO lpbmi,
-        uint fuColorUse);
+    static void SetBitmapInfo(ref BITMAPINFO info, int width, int height)
+    {
+        info.biHeader.biBitCount = 32;
+        info.biHeader.biPlanes = 1;
+        info.biHeader.biSize = 40;
+        info.biHeader.biWidth = width;
+        info.biHeader.biHeight = -height;
+        info.biHeader.biSizeImage = (uint)(width * height) << 2;
+    }
+    [DllImport("gdi32")]
+    static extern int SetDIBitsToDevice(IntPtr hDC, int xDest, int yDest, int dwWidth, int dwHeight, int XSrc, int YSrc, int uStartScan, int cScanLines, ref int lpvBits, ref BITMAPINFO lpbmi, uint fuColorUse);
 
     [DllImport("gdi32.dll")]
     static extern IntPtr CreateCompatibleDC(IntPtr hdc);
@@ -86,12 +80,14 @@ public partial class HwndSource2Control
     [DllImport("user32.dll")]
     static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    static extern IntPtr CreateWindowEx(
-        uint dwExStyle,
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "CreateWindowExW")]
+    public static extern IntPtr CreateWindowExW(
+        int dwExStyle,
+        [MarshalAs(UnmanagedType.LPWStr)]
         string lpClassName,
+        [MarshalAs(UnmanagedType.LPWStr)]
         string lpWindowName,
-        uint dwStyle,
+        UInt32 dwStyle,
         int x,
         int y,
         int nWidth,
@@ -104,8 +100,8 @@ public partial class HwndSource2Control
     [DllImport("user32.dll", SetLastError = true)]
     static extern IntPtr DefWindowProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    static extern bool RegisterClass(ref WNDCLASSEX lpWndClassEx);
+    [DllImport("user32.dll", SetLastError = true, EntryPoint = "RegisterClassExW")]
+    static extern System.UInt16 RegisterClassExW([In] ref WNDCLASSEX lpWndClass);
 
     [DllImport("user32.dll", SetLastError = true)]
     static extern bool DestroyWindow(IntPtr hWnd);
@@ -116,11 +112,13 @@ public partial class HwndSource2Control
     [DllImport("user32.dll")]
     static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
     struct WNDCLASSEX
     {
-        public uint cbSize;
-        public uint style;
+        [MarshalAs(UnmanagedType.U4)]
+        public int cbSize;
+        [MarshalAs(UnmanagedType.U4)]
+        public int style;
         public IntPtr lpfnWndProc;
         public int cbClsExtra;
         public int cbWndExtra;
@@ -128,7 +126,9 @@ public partial class HwndSource2Control
         public IntPtr hIcon;
         public IntPtr hCursor;
         public IntPtr hbrBackground;
+        [MarshalAs(UnmanagedType.LPWStr)]
         public string lpszMenuName;
+        [MarshalAs(UnmanagedType.LPWStr)]
         public string lpszClassName;
         public IntPtr hIconSm;
     }
@@ -154,6 +154,43 @@ public partial class HwndSource2Control
         public int right;
         public int bottom;
     }
-
+    [DllImport("kernel32.dll")]
+    private static extern uint FormatMessage(
+        uint dwFlags,
+        IntPtr lpSource,
+        uint dwMessageId,
+        uint dwLanguageId,
+        System.Text.StringBuilder lpBuffer,
+        int nSize,
+        IntPtr Arguments);
+    
+    private const uint FORMAT_MESSAGE_ALLOCATE_BUFFER = 0x00000100;
+    private const uint FORMAT_MESSAGE_IGNORE_INSERTS = 0x00000200;
+    private const uint FORMAT_MESSAGE_FROM_SYSTEM = 0x00001000;
+    private const uint FORMAT_MESSAGE_ARGUMENT_ARRAY = 0x00002000;
+    [DllImport("kernel32.dll")]
+    static extern uint GetLastError();
+// Helper method to get Windows error message
+    private static string GetErrorMessage(int errorCode)
+    {
+        System.Text.StringBuilder sb = new System.Text.StringBuilder(256);
+    
+        uint result = FormatMessage(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            IntPtr.Zero,
+            (uint)errorCode,
+            0, // Default language
+            sb,
+            sb.Capacity,
+            IntPtr.Zero);
+    
+        if (result == 0)
+        {
+            return $"Unknown error (0x{errorCode:X8})";
+        }
+    
+        // Remove trailing newline characters
+        return sb.ToString().TrimEnd('\r', '\n');
+    }
     delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 }

@@ -8,11 +8,11 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Size = System.Windows.Size;
 
-public partial class HwndSource2Control : HwndHost
+public partial class FastPixels : HwndHost
 {
     IntPtr _hwnd;
     IntPtr _hdc;
-    byte[] _pixelBuffer;
+    int[] _pixelBuffer;
     int _bufferWidth;
     int _bufferHeight;
     bool _doubleBuffer = false;
@@ -28,19 +28,16 @@ public partial class HwndSource2Control : HwndHost
     WndProcDelegate _wndProcDelegate;
     static string _className;
     BITMAPINFO _bitmapInfo;
-
-    public HwndSource2Control()
+    GCHandle gcHandle;
+    public FastPixels()
     {
+        _bitmapInfo = new BITMAPINFO();
+        _pixelBuffer = new int[1920 * 1080];
+        gcHandle = GCHandle.Alloc(_pixelBuffer, GCHandleType.Pinned);
         this.Loaded += OnLoaded;
         this.Unloaded += OnUnloaded;
         this.SizeChanged += OnSizeChanged;
         
-        // Initialize BITMAPINFO structure
-        _bitmapInfo = new BITMAPINFO();
-        _bitmapInfo.bmiHeader.biSize = (uint)Marshal.SizeOf(typeof(BITMAPINFOHEADER));
-        _bitmapInfo.bmiHeader.biPlanes = 1;
-        _bitmapInfo.bmiHeader.biBitCount = 32; // 32-bit for RGBA
-        _bitmapInfo.bmiHeader.biCompression = BI_RGB;
     }
 
     void OnLoaded(object sender, RoutedEventArgs e)
@@ -48,11 +45,13 @@ public partial class HwndSource2Control : HwndHost
         if (_hwnd == IntPtr.Zero)
         {
             BuildWindowCore(new HandleRef(this, IntPtr.Zero));
+            Console.WriteLine("loaded "+ActualWidth+" "+ActualHeight);
         }
     }
 
     void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        gcHandle.Free();
         if (_hwnd == IntPtr.Zero) return;
         if (_hdc != IntPtr.Zero)
         {
@@ -73,39 +72,42 @@ public partial class HwndSource2Control : HwndHost
     protected override HandleRef BuildWindowCore(HandleRef hwndParent)
     {
         _wndProcDelegate = CustomWndProc;
+        WNDCLASSEX wndClass = new WNDCLASSEX();
         
-        if (string.IsNullOrEmpty(_className))
+        _className = Guid.NewGuid().ToString();
+        wndClass.cbSize = Marshal.SizeOf(typeof(WNDCLASSEX));
+            
+        int classStyle = 0;
+        if (_allPaintingInWmPaint)
+            classStyle |= CS_HREDRAW | CS_VREDRAW;
+        if (_doubleBuffer)
+            classStyle |= CS_SAVEBITS;
+            
+        wndClass.style = classStyle;
+        wndClass.lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate);
+        wndClass.hInstance = Marshal.GetHINSTANCE(typeof(FastPixels).Module);
+        wndClass.hbrBackground = _opaque ? IntPtr.Zero : (IntPtr)1;
+        wndClass.lpszClassName = _className;
+            
+        ushort regResult = RegisterClassExW(ref wndClass);
+        if (regResult == 0)
         {
-            _className = Guid.NewGuid().ToString();
-            WNDCLASSEX wndClass = new WNDCLASSEX();
-            wndClass.cbSize = (uint)Marshal.SizeOf(typeof(WNDCLASSEX));
-            
-            uint classStyle = 0;
-            if (_allPaintingInWmPaint)
-                classStyle |= CS_HREDRAW | CS_VREDRAW;
-            if (_doubleBuffer)
-                classStyle |= CS_SAVEBITS;
-            
-            wndClass.style = classStyle;
-            wndClass.lpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProcDelegate);
-            wndClass.hInstance = Marshal.GetHINSTANCE(typeof(HwndSource2Control).Module);
-            wndClass.hbrBackground = _opaque ? IntPtr.Zero : (IntPtr)1;
-            wndClass.lpszClassName = _className;
-            
-            RegisterClass(ref wndClass);
+            uint error = GetLastError();
+            throw new InvalidOperationException("RegisterClassExW failed with " + error);
         }
 
         uint windowStyle = WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS;
-        uint windowExStyle = WS_EX_CONTROLPARENT;
+        int windowExStyle = WS_EX_CONTROLPARENT;
         if (!_userPaint)
         {
             windowExStyle |= WS_EX_TRANSPARENT;
         }
 
-        _hwnd = CreateWindowEx(
+        //https://stackoverflow.com/questions/55910356/how-to-fix-windows-error-1407-cannot-find-window-class-when-trying-to-implemen
+        _hwnd = CreateWindowExW(
             windowExStyle,
-            _className,
-            nameof(HwndSource2Control),
+            wndClass.lpszClassName,
+            nameof(FastPixels),
             windowStyle,
             0, 0,
             (int)Math.Max(this.ActualWidth, _minimumSize.Width),
@@ -117,6 +119,17 @@ public partial class HwndSource2Control : HwndHost
 
         if (_hwnd == IntPtr.Zero)
         {
+            int errorCode = Marshal.GetLastWin32Error();
+            string errorMessage = GetErrorMessage(errorCode);
+        
+            // Log detailed information for debugging
+            string detailedError = $"CreateWindowEx failed with error {errorCode} ({errorMessage})\n" +
+                                   $"Class: {_className}\n" +
+                                   $"Style: 0x{windowStyle:X8}\n" +
+                                   $"ExStyle: 0x{windowExStyle:X8}\n" +
+                                   $"Parent: {hwndParent.Handle}\n" +
+                                   $"Instance: {Marshal.GetHINSTANCE(typeof(FastPixels).Module)}";
+            Console.Write(detailedError);
             throw new InvalidOperationException("Failed to create window");
         }
 
@@ -170,9 +183,9 @@ public partial class HwndSource2Control : HwndHost
         
         try
         {
-            if (_needsRedraw && _pixelBuffer != null)
+            if (_needsRedraw)
             {
-                DrawPixelBufferToDC(hdc, ps.rcPaint);
+                DrawPixelBufferToDC(hdc);
             }
         }
         finally
@@ -181,52 +194,14 @@ public partial class HwndSource2Control : HwndHost
         }
     }
 
-    void DrawPixelBufferToDC(IntPtr hdc, RECT updateRect)
+    void DrawPixelBufferToDC(IntPtr hdc)
     {
-        lock (_bufferLock)
-        {
-            if (_pixelBuffer == null || _bufferWidth == 0 || _bufferHeight == 0)
-                return;
-            
-            // Update BITMAPINFO with current buffer dimensions
-            _bitmapInfo.bmiHeader.biWidth = _bufferWidth;
-            _bitmapInfo.bmiHeader.biHeight = -_bufferHeight; // Negative height for top-down DIB
-            _bitmapInfo.bmiHeader.biSizeImage = (uint)(_bufferWidth * _bufferHeight * 4);
-            
-            // Pin the pixel buffer to get a pointer
-            GCHandle handle = GCHandle.Alloc(_pixelBuffer, GCHandleType.Pinned);
-            
-            try
-            {
-                IntPtr pBits = handle.AddrOfPinnedObject();
-                
-                // Draw only the invalidated region
-                int updateWidth = updateRect.right - updateRect.left;
-                int updateHeight = updateRect.bottom - updateRect.top;
-                
-                if (updateWidth > 0 && updateHeight > 0 && updateWidth <= _bufferWidth && updateHeight <= _bufferHeight)
-                {
-                    // Draw the entire buffer (SetDIBitsToDevice will clip to update region)
-                    SetDIBitsToDevice(
-                        hdc,
-                        0, 0,                          // Destination X,Y
-                        _bufferWidth,                  // Destination width
-                        _bufferHeight,                 // Destination height
-                        0, 0,                          // Source X,Y
-                        0,                             // Start scan line
-                        (uint)_bufferHeight,           // Scan line count
-                        pBits,                         // Pixel bits
-                        ref _bitmapInfo,               // BITMAPINFO
-                        DIB_RGB_COLORS);               // Color usage
-                }
-            }
-            finally
-            {
-                handle.Free();
-            }
-            
-            _needsRedraw = false;
-        }
+        var w = (int)Math.Min(ActualWidth, 1920);
+        var h = (int)Math.Max(ActualHeight, 1080);
+        SetBitmapInfo(ref _bitmapInfo,w,h); 
+        Array.Fill(_pixelBuffer,BitConverter.ToInt32([0,0,255,0]));
+        SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, h, ref _pixelBuffer[0], ref _bitmapInfo, 0);
+
     }
 
     /// <summary>
@@ -235,7 +210,7 @@ public partial class HwndSource2Control : HwndHost
     /// <param name="pixelBuffer">RGBA pixel buffer (byte array of size width * height * 4)</param>
     /// <param name="width">Width of the buffer in pixels</param>
     /// <param name="height">Height of the buffer in pixels</param>
-    public void UpdatePixelBuffer(byte[] pixelBuffer, int width, int height)
+    public void UpdatePixelBuffer(int[] pixelBuffer, int width, int height)
     {
         if (pixelBuffer == null)
             throw new ArgumentNullException(nameof(pixelBuffer));
@@ -275,7 +250,7 @@ public partial class HwndSource2Control : HwndHost
         byte[] buffer = new byte[height * stride];
         
         bitmap.CopyPixels(buffer, stride, 0);
-        UpdatePixelBuffer(buffer, width, height);
+        //UpdatePixelBuffer(buffer, width, height);
     }
 
     /// <summary>
@@ -318,7 +293,7 @@ public partial class HwndSource2Control : HwndHost
             }
         }
         
-        UpdatePixelBuffer(buffer, width, height);
+        //UpdatePixelBuffer(buffer, width, height);
     }
 
     // Properties from original class
