@@ -1,11 +1,6 @@
-﻿using System;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
 using Size = System.Windows.Size;
 
 public partial class FastPixels : HwndHost
@@ -20,7 +15,6 @@ public partial class FastPixels : HwndHost
     bool _allPaintingInWmPaint = true;
     bool _opaque = true;
     Size _minimumSize = new Size(1, 1);
-    object _bufferLock = new object();
     
     // Track if we need to redraw
     bool _needsRedraw = true;
@@ -34,9 +28,9 @@ public partial class FastPixels : HwndHost
         _bitmapInfo = new BITMAPINFO();
         _pixelBuffer = new int[1920 * 1080];
         gcHandle = GCHandle.Alloc(_pixelBuffer, GCHandleType.Pinned);
-        this.Loaded += OnLoaded;
-        this.Unloaded += OnUnloaded;
-        this.SizeChanged += OnSizeChanged;
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+        SizeChanged += OnSizeChanged;
         
     }
 
@@ -110,8 +104,8 @@ public partial class FastPixels : HwndHost
             nameof(FastPixels),
             windowStyle,
             0, 0,
-            (int)Math.Max(this.ActualWidth, _minimumSize.Width),
-            (int)Math.Max(this.ActualHeight, _minimumSize.Height),
+            (int)Math.Max(ActualWidth, _minimumSize.Width),
+            (int)Math.Max(ActualHeight, _minimumSize.Height),
             hwndParent.Handle,
             IntPtr.Zero,
             IntPtr.Zero,
@@ -123,12 +117,7 @@ public partial class FastPixels : HwndHost
             string errorMessage = GetErrorMessage(errorCode);
         
             // Log detailed information for debugging
-            string detailedError = $"CreateWindowEx failed with error {errorCode} ({errorMessage})\n" +
-                                   $"Class: {_className}\n" +
-                                   $"Style: 0x{windowStyle:X8}\n" +
-                                   $"ExStyle: 0x{windowExStyle:X8}\n" +
-                                   $"Parent: {hwndParent.Handle}\n" +
-                                   $"Instance: {Marshal.GetHINSTANCE(typeof(FastPixels).Module)}";
+            string detailedError = $"CreateWindowEx failed with error {errorCode} ({errorMessage})\nClass: {_className}\nStyle: 0x{windowStyle:X8}\nExStyle: 0x{windowExStyle:X8}\nParent: {hwndParent.Handle}\nInstance: {Marshal.GetHINSTANCE(typeof(FastPixels).Module)}";
             Console.Write(detailedError);
             throw new InvalidOperationException("Failed to create window");
         }
@@ -203,127 +192,5 @@ public partial class FastPixels : HwndHost
         SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, h, ref _pixelBuffer[0], ref _bitmapInfo, 0);
 
     }
-
-    /// <summary>
-    /// Update the pixel buffer and redraw the control
-    /// </summary>
-    /// <param name="pixelBuffer">RGBA pixel buffer (byte array of size width * height * 4)</param>
-    /// <param name="width">Width of the buffer in pixels</param>
-    /// <param name="height">Height of the buffer in pixels</param>
-    public void UpdatePixelBuffer(int[] pixelBuffer, int width, int height)
-    {
-        if (pixelBuffer == null)
-            throw new ArgumentNullException(nameof(pixelBuffer));
-        
-        if (pixelBuffer.Length != width * height * 4)
-            throw new ArgumentException($"Buffer size must be {width * height * 4} bytes for RGBA data");
-        
-        lock (_bufferLock)
-        {
-            _pixelBuffer = pixelBuffer;
-            _bufferWidth = width;
-            _bufferHeight = height;
-            _needsRedraw = true;
-        }
-        
-        // Request redraw
-        if (_hwnd != IntPtr.Zero)
-        {
-            InvalidateRect(_hwnd, IntPtr.Zero, true);
-        }
-    }
-
-    /// <summary>
-    /// Update the pixel buffer from a WriteableBitmap
-    /// </summary>
-    public void UpdateFromWriteableBitmap(WriteableBitmap bitmap)
-    {
-        if (bitmap == null)
-            throw new ArgumentNullException(nameof(bitmap));
-        
-        if (bitmap.Format != PixelFormats.Bgra32 && bitmap.Format != PixelFormats.Pbgra32)
-            throw new ArgumentException("Bitmap must be BGRA32 or PBGRA32 format");
-        
-        int width = bitmap.PixelWidth;
-        int height = bitmap.PixelHeight;
-        int stride = width * 4;
-        byte[] buffer = new byte[height * stride];
-        
-        bitmap.CopyPixels(buffer, stride, 0);
-        //UpdatePixelBuffer(buffer, width, height);
-    }
-
-    /// <summary>
-    /// Update the pixel buffer from a BitmapSource
-    /// </summary>
-    public void UpdateFromBitmapSource(BitmapSource bitmapSource)
-    {
-        if (bitmapSource == null)
-            throw new ArgumentNullException(nameof(bitmapSource));
-        
-        // Convert to BGRA32 if needed
-        FormatConvertedBitmap convertedBitmap = new FormatConvertedBitmap();
-        convertedBitmap.BeginInit();
-        convertedBitmap.Source = bitmapSource;
-        convertedBitmap.DestinationFormat = PixelFormats.Bgra32;
-        convertedBitmap.EndInit();
-        
-        WriteableBitmap writeableBitmap = new WriteableBitmap(convertedBitmap);
-        UpdateFromWriteableBitmap(writeableBitmap);
-    }
-
-    /// <summary>
-    /// Create a gradient test pattern
-    /// </summary>
-    public void CreateTestPattern(int width, int height)
-    {
-        byte[] buffer = new byte[width * height * 4];
-        
-        for (int y = 0; y < height; y++)
-        {
-            for (int x = 0; x < width; x++)
-            {
-                int index = (y * width + x) * 4;
-                
-                // Red gradient horizontally
-                buffer[index] = (byte)((double)x / width * 255);     // Blue
-                buffer[index + 1] = (byte)((double)y / height * 255); // Green
-                buffer[index + 2] = (byte)((double)(x + y) / (width + height) * 255); // Red
-                buffer[index + 3] = 255; // Alpha (fully opaque)
-            }
-        }
-        
-        //UpdatePixelBuffer(buffer, width, height);
-    }
-
-    // Properties from original class
-    public bool DoubleBuffer
-    {
-        get => _doubleBuffer;
-        set { _doubleBuffer = value; /* Would require window recreation */ }
-    }
-
-    public bool UserPaint
-    {
-        get => _userPaint;
-        set => _userPaint = value;
-    }
-
-    public bool AllPaintingInWmPaint
-    {
-        get => _allPaintingInWmPaint;
-        set => _allPaintingInWmPaint = value;
-    }
-
-    public bool Opaque
-    {
-        get => _opaque;
-        set => _opaque = value;
-    }
-
-    public Size MinimumSize
-    {
-        get => _minimumSize;
-        set => _minimumSize = value;
-    }
+    
 }
