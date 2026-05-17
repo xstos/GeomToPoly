@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using System.Diagnostics;
+using System.Globalization;
 using System.Net;
 using System.Windows;
 using System.Windows.Controls;
@@ -64,21 +65,36 @@ internal struct Polygon
         return ret;
     }
 }
+
+public class Disposable : IDisposable
+{
+    public Action DisposeAction { get; } = () => { };
+    public Disposable(Action na, Action da)
+    {
+        na();
+        DisposeAction = da;
+    }
+    public void Dispose()
+    {
+        DisposeAction();
+    }
+}
 public class Program
 {
+    static Stopwatch sw = new Stopwatch();
+    static Disposable timer(string name="") => new Disposable(() =>
+    {
+        sw.Reset();
+        //Console.WriteLine("start "+ name);
+        sw.Start();
+    }, () =>
+    {
+        sw.Stop();
+        Console.WriteLine(name+" took "+sw.Elapsed.TotalMilliseconds);
+    } );
     [STAThread]
     public static void Main()
     {
-        var lines = new WebClient().DownloadString("https://www.gutenberg.org/cache/epub/730/pg730.txt")
-            .ReplaceLineEndings("█")
-            .Split('█');
-        var widest = lines.Max(l => l.Length);
-        for (int i = 0; i < lines.Length; i++)
-        {
-            lines[i] = lines[i].PadRight(widest);
-        }
-
-        
         var app = new Application();
 
         var Text = "P";
@@ -99,23 +115,95 @@ public class Program
             return g;
         }
 
+        var txt = new WebClient().DownloadString("https://www.gutenberg.org/cache/epub/730/pg730.txt");
+        var chars = txt.Distinct();
+        var max = chars.Max(c => (int)c)+1;
+        var lines = txt.ReplaceLineEndings("█").Split('█');
+        var widest = lines.Max(l => l.Length);
+        for (int i = 0; i < lines.Length; i++)
+        {
+            lines[i] = lines[i].PadRight(widest);
+        }
+
+        var glyphs = new Glyph[max];
+        using (timer("make glyphs"))
+        {
+            foreach (var c in chars)
+            {
+                glyphs[c] = MakeGlyph(c);
+            }
+        }
+        
         var box = MakeGlyph('█');
         
         var window = new Window();
         var grid = new Grid();
         var canvas = new Canvas();
+        canvas.Background=Brushes.Black;
         grid.Children.Add(canvas);
         window.Content = grid;
         window.TextInput += (sender, args) =>
         {
             PaintLetter(args.Text);
         };
+        void line2(int x1, int y1, int x2, int y2)
+        {
+            var l = new Line();
+            l.X1 = x1;
+            l.X2 = x2;
+            l.Y1 = y1;
+            l.Y2 = y2;
+            l.Stroke = Brushes.White;
+            canvas.Children.Add(l);
+        }
         window.Loaded += (sender, args) =>
         {
+            int lineOffset = 0;
+            
             var (canvasWidth, canvasHeight) = ((int)canvas.ActualWidth, (int)canvas.ActualHeight);
-            var numCols = canvasWidth / (int)Math.Round(box.Bounds.Width,MidpointRounding.AwayFromZero);
-            var numRows = canvasHeight / (int)Math.Round(box.Bounds.Height,MidpointRounding.AwayFromZero);
-            PaintLetter("?");
+            var glyphWidth = (int)Math.Round(box.Bounds.Width,MidpointRounding.AwayFromZero);
+            var glyphHeight = (int)Math.Round(box.Bounds.Height,MidpointRounding.AwayFromZero);
+            var numCols = canvasWidth / glyphWidth;
+            var numRows = canvasHeight / glyphHeight;
+            HLineInfo hi = new HLineInfo(canvasHeight);
+            HLineInfo whole = new HLineInfo(canvasHeight);
+            for (int i = lineOffset; i < lineOffset+numRows-1; i++)
+            {
+                var yoffs = i * glyphHeight;
+                for (int j = 0; j < numCols; j++)
+                {
+                    var xoffs = j * glyphWidth;
+                    if (j > lines[i].Length - 1) break;
+                    char c = lines[i][j];
+                    var ix = (int)c;
+                    var glyph = glyphs[ix];
+                    
+                    foreach (var shape in glyph.Shapes)
+                    {
+                        foreach (var _ in PolygonFiller.FillPolygon2(shape,hi, xoffs, yoffs)) { }
+                    }
+                    for (int ui = 0; ui < hi.UsedRowIndexes.Count; ui++)
+                    {
+                        var y = hi.UsedRowIndexes[ui];
+                        var verts = hi.Rows[y];
+                        verts.Sort();
+                        whole.Rows[y].AddRange(verts);
+                        verts.Clear();
+                    }
+                    hi.UsedRowIndexes.Clear();
+                }
+            }
+
+            for (int i = 0; i < whole.Rows.Length; i++)
+            {
+                var verts = whole.Rows[i];
+                foreach (var c in verts.Chunk(2))
+                {
+                    var (x1, x2) = (c[0], c[1]);
+                    line2(x1,i,x2,i);
+                }
+            }
+            //PaintLetter("?");
         };
         System.Windows.Application.Current.Run(window);
         
@@ -128,7 +216,6 @@ public class Program
                 System.Windows.Media.Brushes.Black, // This brush does not matter since we use the geometry of the text.
                 1.0
             );
-            canvas.Background=Brushes.Black;
             var geom = formattedText.BuildGeometry(new System.Windows.Point(0, 0));
 
             var smoothPoly = geom.ToPolygons().ToLineSegments().Select(s=>s.ToLine());
@@ -169,18 +256,10 @@ public class Program
                 var hl = PolygonFiller.FillPolygon((int)canvas.ActualWidth, height, xs.ToArray(), ys.ToArray(), hLineInfo).ToArray();
                 
             }
-            void line2(int x1, int y1, int x2, int y2)
-            {
-                var l = new Line();
-                l.X1 = x1;
-                l.X2 = x2;
-                l.Y1 = y1;
-                l.Y2 = y2;
-                l.Stroke = Brushes.White;
-                canvas.Children.Add(l);
-            }
+            
             for (int i = 0; i < hLineInfo.UsedRowIndexes.Count; i++)
             {
+                
                 var y = hLineInfo.UsedRowIndexes[i];
                 var verts = hLineInfo.Rows[y];
                 verts.Sort();
