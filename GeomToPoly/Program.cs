@@ -10,75 +10,6 @@ using System.Windows.Shapes;
 
 namespace GeomToPoly;
 
-internal struct Glyph
-{
-    internal Rect Bounds;
-    internal Polygon[] Shapes;
-}
-
-internal struct Polygon
-{
-    internal double[] x;
-    internal double[] y;
-    internal Rect Bounds;
-
-    internal void Shift(double xshift, double yshift)
-    {
-        for (int i = 0; i < x.Length; i++)
-        {
-            x[i] += xshift;
-            y[i] += yshift;
-        }
-    }
-    internal static Polygon New(IEnumerable<double> poly)
-    {
-        var ret = new Polygon();
-        var xs = new List<double>();
-        var ys = new List<double>();
-        double minx=double.MaxValue, miny=double.MaxValue, maxx=double.MinValue, maxy=double.MinValue, offsetX = 0, offsetY = 0;
-        foreach (var d in poly.Chunk(2))
-        {
-            var x = d[0];
-            var y = d[1];
-            minx = x < minx ? x : minx;
-            miny = y < miny ? y : miny;
-            maxx = x > maxx ? x : maxx;
-            maxy = y > maxy ? y : maxy;
-        }
-
-        offsetX = minx < 0 ? -minx : 0;
-        offsetY = miny < 0 ? -miny : 0;
-        
-        foreach (var d in poly.Chunk(2))
-        {
-            var x = d[0];
-            var y = d[1];
-            xs.Add(x+offsetX);
-            ys.Add(y+offsetY);
-        }
-        
-        ret.x = xs.ToArray();
-        ret.y = ys.ToArray();
-        ret.Bounds = new Rect(new Point(minx, miny), new Point(maxx, maxy));
-        ret.Bounds.Offset(offsetX,offsetY);
-        
-        return ret;
-    }
-}
-
-public class Disposable : IDisposable
-{
-    public Action DisposeAction { get; } = () => { };
-    public Disposable(Action na, Action da)
-    {
-        na();
-        DisposeAction = da;
-    }
-    public void Dispose()
-    {
-        DisposeAction();
-    }
-}
 public class Program
 {
     static Stopwatch sw = new Stopwatch();
@@ -141,11 +72,22 @@ public class Program
         var canvas = new Canvas();
         canvas.Background=Brushes.Black;
         //grid.Children.Add(canvas);
-        grid.Children.Add(new FastPixels());
+        var fastPixels = new FastPixels();
+        grid.Children.Add(fastPixels);
         window.Content = grid;
+        int lineOffset = 0;
+        window.PreviewKeyDown += (sender, args) =>
+        {
+            lineOffset++;
+            fastPixels.Clear();
+            Refresh();
+            fastPixels.InvalidateVisual();
+            fastPixels.Paint();
+        };
         window.TextInput += (sender, args) =>
         {
-            PaintLetter(args.Text);
+            
+            //PaintLetter(args.Text);
         };
         void line2(int x1, int y1, int x2, int y2)
         {
@@ -157,32 +99,37 @@ public class Program
             l.Stroke = Brushes.White;
             canvas.Children.Add(l);
         }
-        window.Loaded += (sender, args) =>
+
+        void Refresh()
         {
-            int lineOffset = 0;
             
-            var (canvasWidth, canvasHeight) = ((int)canvas.ActualWidth, (int)canvas.ActualHeight);
-            var glyphWidth = (int)Math.Round(box.Bounds.Width,MidpointRounding.AwayFromZero);
-            var glyphHeight = (int)Math.Round(box.Bounds.Height,MidpointRounding.AwayFromZero);
+            var w = (int)fastPixels.ActualWidth;
+            var h = (int)fastPixels.ActualHeight;
+            var (canvasWidth, canvasHeight) = (w, h);
+            var glyphWidth = (int)Math.Round(box.Bounds.Width, MidpointRounding.AwayFromZero);
+            var glyphHeight = (int)Math.Round(box.Bounds.Height, MidpointRounding.AwayFromZero);
             var numCols = canvasWidth / glyphWidth;
             var numRows = canvasHeight / glyphHeight;
-            HLineInfo hi = new HLineInfo(canvasHeight);
-            HLineInfo whole = new HLineInfo(canvasHeight);
-            for (int i = lineOffset; i < lineOffset+numRows-1; i++)
+            HLineInfo hi = new HLineInfo(1080);
+            HLineInfo whole = new HLineInfo(1080);
+            for (int i = 0; i < numRows - 1; i++)
             {
                 var yoffs = i * glyphHeight;
                 for (int j = 0; j < numCols; j++)
                 {
                     var xoffs = j * glyphWidth;
-                    if (j > lines[i].Length - 1) break;
-                    char c = lines[i][j];
+                    if (j > lines[i+lineOffset].Length - 1) break;
+                    char c = lines[i+lineOffset][j];
                     var ix = (int)c;
                     var glyph = glyphs[ix];
-                    
+
                     foreach (var shape in glyph.Shapes)
                     {
-                        foreach (var _ in PolygonFiller.FillPolygon2(shape,hi, xoffs, yoffs)) { }
+                        foreach (var _ in PolygonFiller.FillPolygon2(shape, hi, xoffs, yoffs))
+                        {
+                        }
                     }
+
                     for (int ui = 0; ui < hi.UsedRowIndexes.Count; ui++)
                     {
                         var y = hi.UsedRowIndexes[ui];
@@ -191,20 +138,32 @@ public class Program
                         whole.Rows[y].AddRange(verts);
                         verts.Clear();
                     }
+
                     hi.UsedRowIndexes.Clear();
                 }
             }
 
+            var arr = fastPixels.Pixels;
+            var color = BitConverter.ToInt32([0, 255, 0, 0]); //bgra
             for (int i = 0; i < whole.Rows.Length; i++)
             {
                 var verts = whole.Rows[i];
                 foreach (var c in verts.Chunk(2))
                 {
                     var (x1, x2) = (c[0], c[1]);
-                    line2(x1,i,x2,i);
+                    Array.Fill(arr, color, i * w + x1, x2 - x1);
+                    //line2(x1,i,x2,i);
                 }
             }
             //PaintLetter("?");
+        }
+
+        window.Loaded += (sender, args) =>
+        {
+            using (timer("paint"))
+            {
+                Refresh();
+            }
         };
         System.Windows.Application.Current.Run(window);
         

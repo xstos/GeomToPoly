@@ -7,9 +7,7 @@ public partial class FastPixels : HwndHost
 {
     IntPtr _hwnd;
     IntPtr _hdc;
-    int[] _pixelBuffer;
-    int _bufferWidth;
-    int _bufferHeight;
+    public int[] Pixels;
     bool _doubleBuffer = false;
     bool _userPaint = true;
     bool _allPaintingInWmPaint = true;
@@ -26,8 +24,8 @@ public partial class FastPixels : HwndHost
     public FastPixels()
     {
         _bitmapInfo = new BITMAPINFO();
-        _pixelBuffer = new int[1920 * 1080];
-        gcHandle = GCHandle.Alloc(_pixelBuffer, GCHandleType.Pinned);
+        Pixels = new int[1920 * 1080];
+        gcHandle = GCHandle.Alloc(Pixels, GCHandleType.Pinned);
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         SizeChanged += OnSizeChanged;
@@ -141,6 +139,16 @@ public partial class FastPixels : HwndHost
         _hwnd = IntPtr.Zero;
     }
 
+    public void Clear()
+    {
+        Array.Fill(Pixels,0);
+        
+    }
+    public void Paint()
+    {
+        HandlePaint(_hwnd);
+        InvalidateRect(_hwnd, IntPtr.Zero, true);
+    }
     IntPtr CustomWndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
         switch (msg)
@@ -172,7 +180,7 @@ public partial class FastPixels : HwndHost
         
         try
         {
-            if (_needsRedraw)
+            if (true)
             {
                 DrawPixelBufferToDC(hdc);
             }
@@ -188,8 +196,8 @@ public partial class FastPixels : HwndHost
         var w = (int)Math.Min(ActualWidth, 1920);
         var h = (int)Math.Max(ActualHeight, 1080);
         SetBitmapInfo(ref _bitmapInfo,w,h); 
-        Array.Fill(_pixelBuffer,BitConverter.ToInt32([0,0,255,0]));
-        SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, h, ref _pixelBuffer[0], ref _bitmapInfo, 0);
+        //Array.Fill(Pixels,BitConverter.ToInt32([0,0,255,0]));
+        SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, h, ref Pixels[0], ref _bitmapInfo, 0);
 
     }
     
