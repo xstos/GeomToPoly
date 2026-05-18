@@ -1,5 +1,6 @@
 ﻿using System.Windows.Interop;
 using System.Runtime.InteropServices;
+using CommunityToolkit.HighPerformance;
 
 namespace GeomToPoly;
 
@@ -20,7 +21,7 @@ internal class SimpleHwndHost : HwndHost
     public int[] Pixels;
     GCHandle gcHandle;
     BITMAPINFO _bitmapInfo;
-        
+    public Action Redraw = () => { };
     static void SetBitmapInfo(ref BITMAPINFO info, int width, int height)
     {
         info.biHeader.biBitCount = 32;
@@ -37,7 +38,12 @@ internal class SimpleHwndHost : HwndHost
         Pixels = new int[1920 * 1080];
         Array.Fill(Pixels,0);
         gcHandle = GCHandle.Alloc(Pixels, GCHandleType.Pinned);
-        
+        SizeChanged += (sender, args) =>
+        {
+            Array.Fill(Pixels,0);
+            //Redraw();
+            //Paint();
+        };
     }
         
     protected override HandleRef BuildWindowCore(HandleRef hwndParent)
@@ -76,16 +82,18 @@ internal class SimpleHwndHost : HwndHost
         RedrawWindow(_hwnd, IntPtr.Zero, IntPtr.Zero, RDW_INVALIDATE | RDW_UPDATENOW);
     
     }
+
     protected override IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         switch (msg)
         {
             case WM_PAINT:
                 IntPtr hdc = BeginPaint(hwnd, out PAINTSTRUCT ps);
-                var w = (int)Math.Min(ActualWidth, 1920);
-                var h = (int)Math.Min(ActualHeight, 1080);
+                var w = (int)ActualWidth;//(int)Math.Min(ActualWidth, 1920);
+                var h = (int)ActualHeight; //(int)Math.Min(ActualHeight, 1080);
                 SetBitmapInfo(ref _bitmapInfo,w,h);
-                SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, (uint)h, Pixels, ref _bitmapInfo, 0);
+               
+                SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, (uint)h, ref Pixels[0], ref _bitmapInfo, 0);
                 EndPaint(hwnd, ref ps);
                 break;
                 
@@ -154,8 +162,8 @@ internal class SimpleHwndHost : HwndHost
     static extern IntPtr GetDC(IntPtr hWnd);
         
     [DllImport("gdi32.dll")]
-    static extern int SetDIBitsToDevice(IntPtr hdc, int xDest, int yDest, int w, int h, int xSrc, int ySrc, uint StartScan, uint cLines, int[] lpvBits, ref BITMAPINFO lpbmi, uint ColorUse);
-   
+    static extern int SetDIBitsToDevice(IntPtr hdc, int xDest, int yDest, int w, int h, int xSrc, int ySrc, uint StartScan, uint cLines, ref int lpvBits, ref BITMAPINFO lpbmi, uint ColorUse);
+
     [StructLayout(LayoutKind.Sequential)]
     struct BITMAPINFOHEADER
     {
