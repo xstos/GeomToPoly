@@ -1,8 +1,11 @@
 ﻿using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Net;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 
@@ -45,8 +48,10 @@ public class Program
             }
             return g;
         }
-
-        var txt = new WebClient().DownloadString("https://www.gutenberg.org/cache/epub/730/pg730.txt");
+        string txt;
+        
+        txt = Res("GeomToPoly.twist.txt");
+        //var txt = new WebClient().DownloadString("https://www.gutenberg.org/cache/epub/730/pg730.txt");
         var chars = txt.Distinct();
         var max = chars.Max(c => (int)c)+1;
         var lines = txt.ReplaceLineEndings("█").Split('█');
@@ -68,20 +73,32 @@ public class Program
         var box = MakeGlyph('█');
         
         var window = new Window();
+        window.Background = Brushes.Black;
         var grid = new Grid();
         var canvas = new Canvas();
         canvas.Background=Brushes.Black;
         //grid.Children.Add(canvas);
         var fastPixels = new FastPixels();
-        grid.Children.Add(fastPixels);
+        //grid.Children.Add(fastPixels);
+        var test = new SimpleHwndHost();
+        
+        grid.Children.Add(test);
         window.Content = grid;
         int lineOffset = 0;
         window.PreviewKeyDown += (sender, args) =>
         {
-            lineOffset++;
+            if (args.Key == Key.Up)
+            {
+                lineOffset--;
+                if (lineOffset < 0) lineOffset = 0;
+            }
+
+            if (args.Key == Key.Down)
+            {
+                lineOffset++;
+            }
             fastPixels.Clear();
             Refresh();
-            fastPixels.InvalidateVisual();
             fastPixels.Paint();
         };
         window.TextInput += (sender, args) =>
@@ -99,12 +116,13 @@ public class Program
             l.Stroke = Brushes.White;
             canvas.Children.Add(l);
         }
-
+        
         void Refresh()
         {
-            
-            var w = (int)fastPixels.ActualWidth;
-            var h = (int)fastPixels.ActualHeight;
+            var arr = test.Pixels;
+            Array.Fill(arr, 0);
+            var w = (int)test.ActualWidth;
+            var h = (int)test.ActualHeight;
             var (canvasWidth, canvasHeight) = (w, h);
             var glyphWidth = (int)Math.Round(box.Bounds.Width, MidpointRounding.AwayFromZero);
             var glyphHeight = (int)Math.Round(box.Bounds.Height, MidpointRounding.AwayFromZero);
@@ -143,7 +161,6 @@ public class Program
                 }
             }
 
-            var arr = fastPixels.Pixels;
             var color = BitConverter.ToInt32([0, 255, 0, 0]); //bgra
             for (int i = 0; i < whole.Rows.Length; i++)
             {
@@ -151,15 +168,23 @@ public class Program
                 foreach (var c in verts.Chunk(2))
                 {
                     var (x1, x2) = (c[0], c[1]);
-                    Array.Fill(arr, color, i * w + x1, x2 - x1);
+                    var startIndex = i * w + x1;
+                    var count = x2 - x1;
+                    Array.Fill(arr, color, startIndex, count);
+                    //.Write(startIndex + " " + count);
                     //line2(x1,i,x2,i);
                 }
             }
+            test.Paint();
             //PaintLetter("?");
         }
-
+        window.MouseMove += (sender, args) =>
+        {
+            //Console.WriteLine(args.GetPosition(test).Y);
+        };
         window.Loaded += (sender, args) =>
         {
+            
             using (timer("paint"))
             {
                 Refresh();
@@ -231,5 +256,14 @@ public class Program
                 verts.Clear();
             }
         }
+    }
+
+    static string Res(string resourceName)
+    {
+        var assembly = Assembly.GetExecutingAssembly();
+        var n = assembly.GetManifestResourceNames();
+        using Stream stream = assembly.GetManifestResourceStream(resourceName);
+        using StreamReader reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 }

@@ -8,4 +8,9 @@
         <UseWPF>true</UseWPF>
     </PropertyGroup>
 
+    <ItemGroup>
+      <None Remove="twist.txt" />
+      <EmbeddedResource Include="twist.txt" />
+    </ItemGroup>
+
 </Project>

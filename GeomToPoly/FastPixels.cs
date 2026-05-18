@@ -34,11 +34,9 @@ public partial class FastPixels : HwndHost
 
     void OnLoaded(object sender, RoutedEventArgs e)
     {
-        if (_hwnd == IntPtr.Zero)
-        {
-            BuildWindowCore(new HandleRef(this, IntPtr.Zero));
-            Console.WriteLine("loaded "+ActualWidth+" "+ActualHeight);
-        }
+        if (_hwnd != IntPtr.Zero) return;
+        BuildWindowCore(new HandleRef(this, IntPtr.Zero));
+        Console.WriteLine("loaded "+ActualWidth+" "+ActualHeight);
     }
 
     void OnUnloaded(object sender, RoutedEventArgs e)
@@ -194,7 +192,7 @@ public partial class FastPixels : HwndHost
     void DrawPixelBufferToDC(IntPtr hdc)
     {
         var w = (int)Math.Min(ActualWidth, 1920);
-        var h = (int)Math.Max(ActualHeight, 1080);
+        var h = (int)Math.Min(ActualHeight, 1080);
         SetBitmapInfo(ref _bitmapInfo,w,h); 
         //Array.Fill(Pixels,BitConverter.ToInt32([0,0,255,0]));
         SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, h, ref Pixels[0], ref _bitmapInfo, 0);
