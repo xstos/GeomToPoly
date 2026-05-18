@@ -35,7 +35,7 @@ internal class SimpleHwndHost : HwndHost
     public SimpleHwndHost()
     {
         _bitmapInfo = new BITMAPINFO();
-        Pixels = new int[1920 * 1080];
+        Pixels = new int[1920 * 1200];
         Array.Fill(Pixels,0);
         gcHandle = GCHandle.Alloc(Pixels, GCHandleType.Pinned);
         SizeChanged += (sender, args) =>
@@ -45,7 +45,35 @@ internal class SimpleHwndHost : HwndHost
             //Paint();
         };
     }
+
+    protected override void OnInitialized(EventArgs e)
+    {
         
+        base.OnInitialized(e);
+        MessageHook += OnMessageHook;
+        IntPtr OnMessageHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            switch (msg)
+            {
+                case WM_PAINT:
+                    IntPtr hdc = BeginPaint(hwnd, out PAINTSTRUCT ps);
+                    var w = (int)ActualWidth;//(int)Math.Min(ActualWidth, 1920);
+                    var h = (int)ActualHeight; //(int)Math.Min(ActualHeight, 1200);
+                    SetBitmapInfo(ref _bitmapInfo,w,h);
+               
+                    SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, (uint)h, ref Pixels[0], ref _bitmapInfo, 0);
+                    EndPaint(hwnd, ref ps);
+                    break;
+                
+                case WM_ERASEBKGND:
+                    break;
+            }
+            handled = false;
+        
+            return IntPtr.Zero;
+        }
+    }
+
     protected override HandleRef BuildWindowCore(HandleRef hwndParent)
     {
         _hwnd = CreateWindowEx(
@@ -56,7 +84,7 @@ internal class SimpleHwndHost : HwndHost
             x: 0, 
             y: 0, 
             nWidth: 1920, 
-            nHeight: 1080, 
+            nHeight: 1200, 
             hWndParent: hwndParent.Handle, 
             hMenu: IntPtr.Zero, 
             hInstance: IntPtr.Zero, 
@@ -83,27 +111,6 @@ internal class SimpleHwndHost : HwndHost
     
     }
 
-    protected override IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
-    {
-        switch (msg)
-        {
-            case WM_PAINT:
-                IntPtr hdc = BeginPaint(hwnd, out PAINTSTRUCT ps);
-                var w = (int)ActualWidth;//(int)Math.Min(ActualWidth, 1920);
-                var h = (int)ActualHeight; //(int)Math.Min(ActualHeight, 1080);
-                SetBitmapInfo(ref _bitmapInfo,w,h);
-               
-                SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, (uint)h, ref Pixels[0], ref _bitmapInfo, 0);
-                EndPaint(hwnd, ref ps);
-                break;
-                
-            case WM_ERASEBKGND:
-                break;
-        }
-        handled = false;
-        
-        return IntPtr.Zero;
-    }
     [DllImport("user32.dll")]
     public static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
 

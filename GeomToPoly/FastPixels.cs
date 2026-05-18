@@ -24,7 +24,7 @@ public partial class FastPixels : HwndHost
     public FastPixels()
     {
         _bitmapInfo = new BITMAPINFO();
-        Pixels = new int[1920 * 1080];
+        Pixels = new int[1920 * 1200];
         gcHandle = GCHandle.Alloc(Pixels, GCHandleType.Pinned);
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
@@ -192,7 +192,7 @@ public partial class FastPixels : HwndHost
     void DrawPixelBufferToDC(IntPtr hdc)
     {
         var w = (int)Math.Min(ActualWidth, 1920);
-        var h = (int)Math.Min(ActualHeight, 1080);
+        var h = (int)Math.Min(ActualHeight, 1200);
         SetBitmapInfo(ref _bitmapInfo,w,h); 
         //Array.Fill(Pixels,BitConverter.ToInt32([0,0,255,0]));
         SetDIBitsToDevice(hdc, 0, 0, w, h, 0, 0, 0, h, ref Pixels[0], ref _bitmapInfo, 0);
