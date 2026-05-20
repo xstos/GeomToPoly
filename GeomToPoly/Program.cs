@@ -1,13 +1,10 @@
 ﻿using System.Diagnostics;
 using System.Globalization;
 using System.IO;
-using System.Net;
 using System.Reflection;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Shapes;
 
 [assembly: ThemeInfo(ResourceDictionaryLocation.None, ResourceDictionaryLocation.SourceAssembly)]
 
@@ -26,36 +23,29 @@ public class Program
         sw.Stop();
         Console.WriteLine(name+" took "+sw.Elapsed.TotalMilliseconds);
     } );
-    [STAThread]
-    public static void Main()
+
+    static Func<int> MakeGetNextColor()
     {
-        var colors = Enum.GetValues(typeof(KnownColor)).Cast<int>().ToArray();
-        IEnumerable<int> ColorWheel()
-        {
-            while (true)
-            {
-                foreach (var t in colors)
-                {
-                    yield return t;
-                }
-            }
-        }
-
         var enu = ColorWheel().GetEnumerator();
-
-        int NextColor()
+        int Next()
         {
             enu.MoveNext();
             return enu.Current;
         }
+
+        return Next;
+    }
+    
+    [STAThread]
+    public static void Main()
+    {
         var app = new Application();
 
         var Text = "P";
         var FontSize = 20;
         var fontName = "Jetbrains Mono";
         var typeface = new Typeface(new FontFamily(fontName), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
-        FormattedText formattedText;
-        
+        var nextColor = MakeGetNextColor();
         Glyph MakeGlyph(char c)
         {
             var ft = new FormattedText(c+"", CultureInfo.GetCultureInfo("en-us"), FlowDirection.LeftToRight, typeface, FontSize, Brushes.White, 1.0);
@@ -68,9 +58,8 @@ public class Program
             }
             return g;
         }
-        string txt;
-        
-        txt = Res("GeomToPoly.twist.txt");
+
+        var txt = Res("GeomToPoly.twist.txt");
         //var txt = new WebClient().DownloadString("https://www.gutenberg.org/cache/epub/730/pg730.txt");
         var chars = txt.Distinct();
         var max = chars.Max(c => (int)c)+1;
@@ -79,8 +68,8 @@ public class Program
         var brushes = new MyBrush[lines.Length][];
         for (int i = 0; i < lines.Length; i++)
         {
-            lines[i] = lines[i].PadRight(widest,' ');
-            brushes[i] = Enumerable.Range(0, widest).Select(_ => (MyBrush)NextColor()).ToArray();
+            //lines[i] = lines[i].PadRight(widest,' ');
+            brushes[i] = Enumerable.Range(0, widest).Select(_ => (MyBrush)nextColor()).ToArray();
         }
 
         var glyphs = new Glyph[max];
@@ -92,10 +81,11 @@ public class Program
             }
         }
 
-        var popts = new ParallelOptions() { MaxDegreeOfParallelism = 8 };
+        var popts = new ParallelOptions() { MaxDegreeOfParallelism = 1 };
         var box = MakeGlyph('█');
         HLineInfo hi = new HLineInfo(1200);
         HLineInfo whole = new HLineInfo(1200);
+        
         var window = new Window();
         window.Left = 0;
         window.Top = 0;
@@ -103,16 +93,8 @@ public class Program
         window.Height = 1200;
         
         window.Background = Brushes.Black;
-        var grid = new Grid();
-        var canvas = new Canvas();
-        canvas.Background=Brushes.Black;
-        grid.Children.Add(canvas);
-        var fastPixels = new FastPixels();
-        //grid.Children.Add(fastPixels);
-        var test = new SimpleHwndHost();
-        
-        grid.Children.Add(test);
-        window.Content = grid;
+        var test = new PixelBuffer();
+        window.Content = test;
         int lineOffset = 0;
         window.PreviewMouseWheel += (sender, args) =>
         {
@@ -134,29 +116,22 @@ public class Program
             {
                 lineOffset++;
             }
-            //fastPixels.Clear();
             Refresh();
-            //fastPixels.Paint();
         };
         window.TextInput += (sender, args) =>
         {
-            
-            //PaintLetter(args.Text);
         };
-        void line2(int x1, int y1, int x2, int y2)
+        
+        window.SizeChanged += (sender, args) =>
         {
-            var l = new Line();
-            l.X1 = x1;
-            l.X2 = x2;
-            l.Y1 = y1;
-            l.Y2 = y2;
-            l.Stroke = Brushes.White;
-            canvas.Children.Add(l);
-        }
+            var height = (int)Math.Floor(args.NewSize.Height);
+            hi = new HLineInfo(height);
+            whole = new HLineInfo(height);
+        };
         
-        test.Redraw = Redraw;
+        test.Render = Render;
         
-        void Redraw()
+        void Render()
         {
             
             hi.UsedRowIndexes.Clear();
@@ -184,7 +159,7 @@ public class Program
                     var glyph = glyphs[ix];
                     foreach (var shape in glyph.Shapes)
                     {
-                        foreach (var _ in PolygonFiller.FillPolygon2(shape, hi, xoffs, yoffs))
+                        foreach (var _ in PolygonFiller.FillPolygon(shape, hi, xoffs, yoffs))
                         {
                         }
                     }
@@ -210,7 +185,6 @@ public class Program
             {
                 var verts = whole.Rows[i];
                 var brushes = whole.Brushes[i];
-                //var color = BitConverter.ToInt32([bi, gi, 0, 0]); //bgra
                 foreach (var c in verts.Chunk(2))
                 {
                     var (x1, x2) = (c[0], c[1]);
@@ -218,8 +192,6 @@ public class Program
                     var count = x2 - x1+1;
                     
                     Array.Fill(arr, brushes[x1].Color, startIndex, count);
-                    //.Write(startIndex + " " + count);
-                    //line2(x1,i,x2,i);
                 }
 
                 verts.Clear();
@@ -230,12 +202,10 @@ public class Program
         {
             using (timer("redraw"))
             {
-
-                Redraw();
+                Render();
             }
 
             test.Paint();
-            //PaintLetter("?");
         }
         window.MouseMove += (sender, args) =>
         {
@@ -243,80 +213,26 @@ public class Program
         };
         window.Loaded += (sender, args) =>
         {
-            
             using (timer("paint"))
             {
                 Refresh();
             }
         };
-        System.Windows.Application.Current.Run(window);
         
-        void PaintLetter(string Text)
+        Application.Current.Run(window);
+        
+    }
+    static IEnumerable<int> ColorWheel()
+    {
+        var colors = Enum.GetValues(typeof(KnownColor)).Cast<int>().ToArray();
+        while (true)
         {
-            var teststr =
-                @" █ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz1234567890~!@#$%^&*()_+`-=[];',./{}:""<>?|";
-            canvas.Children.Clear();
-            formattedText = new FormattedText(Text+teststr, CultureInfo.GetCultureInfo("en-us"), FlowDirection.LeftToRight, typeface, FontSize,
-                System.Windows.Media.Brushes.Black, // This brush does not matter since we use the geometry of the text.
-                1.0
-            );
-            var geom = formattedText.BuildGeometry(new System.Windows.Point(0, 0));
-
-            var smoothPoly = geom.ToPolygons().ToLineSegments().Select(s=>s.ToLine());
-            foreach (var line in smoothPoly)
+            foreach (var t in colors)
             {
-                line.Stroke = Brushes.White;
-                line.StrokeThickness = 2;
-                //canvas.Children.Add(line);
-            }
-            geom.Transform = new TranslateTransform(400,0);
-            geom = geom.GetFlattenedPathGeometry(0.01, ToleranceType.Relative);
-            
-            
-            var coarsePoly = geom.ToPolygons().ToLineSegments().Select(s=>s.ToLine());
-            foreach (var line in coarsePoly)
-            {
-                line.Stroke = Brushes.Yellow;
-                line.StrokeThickness = 2;
-                //canvas.Children.Add(line);
-            }
-            var height = (int)canvas.ActualHeight;
-            
-            var hLineInfo = new HLineInfo(height);
- 
-            var geom2 = formattedText.BuildGeometry(new System.Windows.Point(0, 0)).GetFlattenedPathGeometry(0.01, ToleranceType.Relative);
-            
-            var cp2 = geom2.ToPolygons();
-            foreach (var poly in cp2)
-            {
-                var xs = new List<double>();
-                var ys = new List<double>();
-                foreach (var d in poly.Chunk(2))
-                {
-                    xs.Add(d[0]);
-                    ys.Add(d[1]);
-                }
-                
-                //var hl = PolygonFiller.FillPolygon((int)canvas.ActualWidth, height, xs.ToArray(), ys.ToArray(), hLineInfo).ToArray();
-                
-            }
-            
-            for (int i = 0; i < hLineInfo.UsedRowIndexes.Count; i++)
-            {
-                
-                var y = hLineInfo.UsedRowIndexes[i];
-                var verts = hLineInfo.Rows[y];
-                verts.Sort();
-                foreach (var c in verts.Chunk(2))
-                {
-                    var (x1, x2) = (c[0], c[1]);
-                    line2(x1,y,x2,y);
-                }
-                verts.Clear();
+                yield return t;
             }
         }
     }
-
     static string Res(string resourceName)
     {
         var assembly = Assembly.GetExecutingAssembly();
