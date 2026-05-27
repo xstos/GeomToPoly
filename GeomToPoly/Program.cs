@@ -159,8 +159,9 @@ public class Program
                     var glyph = glyphs[ix];
                     foreach (var shape in glyph.Shapes)
                     {
-                        foreach (var _ in PolygonFiller.FillPolygon(shape, hi, xoffs, yoffs))
+                        foreach (var tuple in PolygonFiller.FillPolygon(shape, xoffs, yoffs))
                         {
+                            hi.Push(tuple.y,tuple.x1,tuple.x2);
                         }
                     }
 

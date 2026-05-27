@@ -37,7 +37,7 @@ internal struct HLineInfo
 }
 internal static class PolygonFiller
 {
-    internal static IEnumerable<(int y, int x1, int x2)> FillPolygon(Polygon p, HLineInfo inf, int xoffs, int yoffs)
+    internal static IEnumerable<(int y, int x1, int x2)> FillPolygon(Polygon p, int xoffs, int yoffs)
     {
         var polyX = p.x;
         var polyY = p.y;
@@ -82,7 +82,6 @@ internal static class PolygonFiller
                 var y = pixelY+yoffs;
                 var startx = xStart+xoffs;
                 var endx = xEnd+xoffs;
-                inf.Push(y,startx,endx);
                 yield return (y,startx,endx);
             }
         }
