@@ -5,11 +5,11 @@ namespace GeomToPoly;
 
 internal struct MyBrush
 {
-    internal int Color;
-
-    public static implicit operator MyBrush(int i)
+    internal int ForegroundColor;
+    internal int BackgroundColor;
+    public static implicit operator MyBrush((int fore, int back) colors)
     {
-        return new MyBrush() { Color = i };
+        return new MyBrush() { ForegroundColor = colors.fore, BackgroundColor = colors.back};
     }
 }
 internal struct HLineInfo
@@ -17,13 +17,14 @@ internal struct HLineInfo
     internal List<int>[] Rows;
     internal MyBrush[][] Brushes;
     internal List<int> UsedRowIndexes;
+    public int Height => Rows.Length;
     public HLineInfo(int height)
     {
         Rows = new List<int>[height];
         Brushes = new MyBrush[height][];
         for (int i = 0; i < height; i++)
         {
-            Rows[i] = new List<int>(16);
+            Rows[i] = new List<int>(1200);
             Brushes[i] = new MyBrush[1920];
         }
         UsedRowIndexes = new List<int>(height);

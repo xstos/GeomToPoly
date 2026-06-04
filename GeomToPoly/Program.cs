@@ -46,6 +46,9 @@ public class Program
         var fontName = "Jetbrains Mono";
         var typeface = new Typeface(new FontFamily(fontName), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
         var nextColor = MakeGetNextColor();
+        var box = MakeGlyph('█');
+        var glyphWidth = (int)Math.Round(box.Bounds.Width, MidpointRounding.AwayFromZero);
+        var glyphHeight = (int)Math.Round(box.Bounds.Height, MidpointRounding.AwayFromZero);
         Glyph MakeGlyph(char c)
         {
             var ft = new FormattedText(c+"", CultureInfo.GetCultureInfo("en-us"), FlowDirection.LeftToRight, typeface, FontSize, Brushes.White, 1.0);
@@ -69,7 +72,7 @@ public class Program
         for (int i = 0; i < lines.Length; i++)
         {
             //lines[i] = lines[i].PadRight(widest,' ');
-            brushes[i] = Enumerable.Range(0, widest).Select(_ => (MyBrush)nextColor()).ToArray();
+            brushes[i] = Enumerable.Range(0, widest).Select(_ => (MyBrush)(nextColor(),nextColor())).ToArray();
         }
 
         var glyphs = new Glyph[max];
@@ -82,9 +85,8 @@ public class Program
         }
 
         var popts = new ParallelOptions() { MaxDegreeOfParallelism = 1 };
-        var box = MakeGlyph('█');
-        HLineInfo hi = new HLineInfo(1200);
-        HLineInfo whole = new HLineInfo(1200);
+        HLineInfo singleGlyphLineInfo = new HLineInfo(1200);
+        HLineInfo wholeLineInfo = new HLineInfo(1200);
         
         var window = new Window();
         window.Left = 0;
@@ -93,8 +95,8 @@ public class Program
         window.Height = 1200;
         
         window.Background = Brushes.Black;
-        var test = new PixelBuffer();
-        window.Content = test;
+        var pixelBuffer = new PixelBuffer();
+        window.Content = pixelBuffer;
         int lineOffset = 0;
         window.PreviewMouseWheel += (sender, args) =>
         {
@@ -125,74 +127,79 @@ public class Program
         window.SizeChanged += (sender, args) =>
         {
             var height = (int)Math.Floor(args.NewSize.Height);
-            hi = new HLineInfo(height);
-            whole = new HLineInfo(height);
+            if (singleGlyphLineInfo.Height >= height) return;
+            singleGlyphLineInfo = new HLineInfo(height);
+            wholeLineInfo = new HLineInfo(height);
         };
         
-        test.Render = Render;
+        pixelBuffer.Render = Render;
         
         void Render()
         {
+            singleGlyphLineInfo.UsedRowIndexes.Clear();
+            wholeLineInfo.UsedRowIndexes.Clear();
+            var wholeRows = wholeLineInfo.Rows;
+            var singleGlyphUsedRowIndexes = singleGlyphLineInfo.UsedRowIndexes;
+            var pixels = pixelBuffer.Pixels;
+            Array.Fill(pixels, 0);
+            var pixelBufferWidth = (int)pixelBuffer.ActualWidth;
+            var pixelBufferHeight = (int)pixelBuffer.ActualHeight;
             
-            hi.UsedRowIndexes.Clear();
-            whole.UsedRowIndexes.Clear();
-            var arr = test.Pixels;
-            Array.Fill(arr, 0);
-            var w = (int)test.ActualWidth;
-            var h = (int)test.ActualHeight;
-            var (canvasWidth, canvasHeight) = (w, h);
-            var glyphWidth = (int)Math.Round(box.Bounds.Width, MidpointRounding.AwayFromZero);
-            var glyphHeight = (int)Math.Round(box.Bounds.Height, MidpointRounding.AwayFromZero);
-            var numCols = canvasWidth / glyphWidth;
-            var numRows = canvasHeight / glyphHeight;
+            var numCols = pixelBufferWidth / glyphWidth;
+            var numRows = pixelBufferHeight / glyphHeight;
             
             for (int i = 0; i < numRows - 1; i++)
             {
+                var lineIndex = i+lineOffset;
+                var line = lines[lineIndex];
+                var lineLength = line.Length - 1;
                 var yoffs = i * glyphHeight;
-                for (int j = 0; j < numCols; j++)
+                for (int j = 0; j < Math.Min(numCols,lineLength); j++)
                 {
                     var xoffs = j * glyphWidth;
-                    if (j > lines[i+lineOffset].Length - 1) break;
-                    char c = lines[i+lineOffset][j];
-                    MyBrush brush = brushes[i + lineOffset][j];
+                    char c = line[j];
+                    MyBrush brush = brushes[lineIndex][j];
+                    
                     var ix = (int)c;
                     var glyph = glyphs[ix];
                     foreach (var shape in glyph.Shapes)
                     {
                         foreach (var tuple in PolygonFiller.FillPolygon(shape, xoffs, yoffs))
                         {
-                            hi.Push(tuple.y,tuple.x1,tuple.x2);
+                            singleGlyphLineInfo.Push(tuple.y,tuple.x1,tuple.x2);
                         }
                     }
 
-                    for (int ui = 0; ui < hi.UsedRowIndexes.Count; ui++)
+                    var count = singleGlyphUsedRowIndexes.Count;
+                    for (int k = 0; k < count; k++)
                     {
-                        var y = hi.UsedRowIndexes[ui];
-                        var verts = hi.Rows[y];
+                        var y = singleGlyphUsedRowIndexes[k];
+                        var verts = singleGlyphLineInfo.Rows[y];
                         verts.Sort();
-                        whole.Rows[y].AddRange(verts);
+                        //wholeRows[y].Add(brush.ForegroundColor);
+                        wholeRows[y].AddRange(verts);
                         foreach (var t in verts)
                         {
-                            whole.Brushes[y][t] = brush;
+                            wholeLineInfo.Brushes[y][t] = brush;
                         }
                         verts.Clear();
                     }
 
-                    hi.UsedRowIndexes.Clear();
+                    singleGlyphUsedRowIndexes.Clear();
                 }
             }
             
-            Parallel.For(0, whole.Rows.Length,popts, i =>
+            Parallel.For(0, wholeRows.Length,popts, i =>
             {
-                var verts = whole.Rows[i];
-                var brushes = whole.Brushes[i];
+                var verts = wholeRows[i];
+                var brushes = wholeLineInfo.Brushes[i];
                 foreach (var c in verts.Chunk(2))
                 {
                     var (x1, x2) = (c[0], c[1]);
-                    var startIndex = i * w + x1;
-                    var count = x2 - x1+1;
+                    var startIndex = i * pixelBufferWidth + x1;
+                    var count = x2 - x1 + 1;
                     
-                    Array.Fill(arr, brushes[x1].Color, startIndex, count);
+                    Array.Fill(pixels, brushes[x1].ForegroundColor, startIndex, count);
                 }
 
                 verts.Clear();
@@ -206,7 +213,7 @@ public class Program
                 Render();
             }
 
-            test.Paint();
+            pixelBuffer.Paint();
         }
         window.MouseMove += (sender, args) =>
         {

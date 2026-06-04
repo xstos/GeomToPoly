@@ -1,10 +1,38 @@
 ﻿using System.Windows;
+using V = System.Numerics.Vector;
 
 namespace GeomToPoly;
 internal struct Glyph
 {
     internal Rect Bounds;
     internal Polygon[] Shapes;
+
+    internal Glyph Rotate(double angle)
+    {
+        /*
+        var angleDegrees = 45;
+        double angleRad = angleDegrees * Math.PI / 180.0;
+        double cos = Math.Cos(angleRad);
+        double sin = Math.Sin(angleRad);
+        var centerX = p.Bounds.Left * 0.5 + p.Bounds.Right * 0.5;
+        var centerY = p.Bounds.Top * 0.5 + p.Bounds.Bottom * 0.5;
+        for (int i = 0; i < p.x.Length; i++)
+        {
+            // Translate to origin
+            double dx = polyX[i] - centerX;
+            double dy = polyY[i] - centerY;
+
+            // Rotate
+            double newX = dx * cos - dy * sin;
+            double newY = dx * sin + dy * cos;
+
+            // Translate back
+            polyX[i] = newX + centerX;
+            polyY[i] = newY + centerY;
+        }
+        */
+        return this;
+    }
 }
 internal struct Polygon
 {
@@ -20,6 +48,7 @@ internal struct Polygon
             y[i] += yshift;
         }
     }
+
     internal static Polygon New(IEnumerable<double> poly)
     {
         var ret = new Polygon();

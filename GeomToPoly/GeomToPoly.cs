@@ -20,16 +20,6 @@ public static class GeomToPoly
             .Select(pt => (pt.Item1[0], pt.Item1[1], pt.Item2[0], pt.Item2[1]));
     }
 
-    public static Line ToLine(this TSeg seg)
-    {
-        return new Line
-        {
-            X1 = seg.Item1,
-            Y1 = seg.Item2,
-            X2 = seg.Item3,
-            Y2 = seg.Item4,
-        };
-    }
     public static IEnumerable<(T, T)> Pairwise<T>(this IEnumerable<T> source)
     {
         var previous = default(T);
