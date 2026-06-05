@@ -41,14 +41,12 @@ public class Program
     {
         var app = new Application();
 
-        var Text = "P";
         var FontSize = 20;
         var fontName = "Jetbrains Mono";
         var typeface = new Typeface(new FontFamily(fontName), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
         var nextColor = MakeGetNextColor();
-        var box = MakeGlyph('█');
-        var glyphWidth = (int)Math.Round(box.Bounds.Width, MidpointRounding.AwayFromZero);
-        var glyphHeight = (int)Math.Round(box.Bounds.Height, MidpointRounding.AwayFromZero);
+        int glyphWidth, glyphHeight;
+        
         Glyph MakeGlyph(char c)
         {
             var ft = new FormattedText(c+"", CultureInfo.GetCultureInfo("en-us"), FlowDirection.LeftToRight, typeface, FontSize, Brushes.White, 1.0);
@@ -62,11 +60,13 @@ public class Program
             return g;
         }
 
-        var txt = Res("GeomToPoly.twist.txt");
+        var txt = Res("GeomToPoly.twist.txt"); /*.Replace("W","W█"); */
         //var txt = new WebClient().DownloadString("https://www.gutenberg.org/cache/epub/730/pg730.txt");
         var chars = txt.Distinct();
         var max = chars.Max(c => (int)c)+1;
-        var lines = txt.ReplaceLineEndings("█").Split('█');
+        Console.WriteLine("last char index "+max);
+        var glyphs = new Glyph[max];
+        var lines = txt.ReplaceLineEndings("\n").Split('\n');
         var widest = lines.Max(l => l.Length);
         var brushes = new MyBrush[lines.Length][];
         for (int i = 0; i < lines.Length; i++)
@@ -75,14 +75,21 @@ public class Program
             brushes[i] = Enumerable.Range(0, widest).Select(_ => (MyBrush)(nextColor(),nextColor())).ToArray();
         }
 
-        var glyphs = new Glyph[max];
-        using (timer("make glyphs"))
+        void MakeGlyphs()
         {
+            using var _ = timer("make glyphs");
+            glyphWidth = int.MinValue;
+            glyphHeight = int.MinValue;
             foreach (var c in chars)
             {
-                glyphs[c] = MakeGlyph(c);
+                var g = MakeGlyph(c);
+                glyphs[c] = g;
+                var (w, h) = g.Size();
+                if (w > glyphWidth) glyphWidth = w;
+                if (h > glyphHeight) glyphHeight = h;
             }
         }
+        MakeGlyphs();
 
         var popts = new ParallelOptions() { MaxDegreeOfParallelism = 1 };
         HLineInfo singleGlyphLineInfo = new HLineInfo(1200);
@@ -118,6 +125,24 @@ public class Program
             {
                 lineOffset++;
             }
+
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+            {
+                if (args.Key == Key.OemPlus)
+                {
+                    FontSize += 1;
+                    MakeGlyphs();
+                }
+
+                if (args.Key == Key.OemMinus)
+                {
+                    FontSize -= 1;
+                    if (FontSize < 1) FontSize = 1;
+                    MakeGlyphs();
+                }
+
+                
+            }
             Refresh();
         };
         window.TextInput += (sender, args) =>
@@ -144,7 +169,6 @@ public class Program
             Array.Fill(pixels, 0);
             var pixelBufferWidth = (int)pixelBuffer.ActualWidth;
             var pixelBufferHeight = (int)pixelBuffer.ActualHeight;
-            
             var numCols = pixelBufferWidth / glyphWidth;
             var numRows = pixelBufferHeight / glyphHeight;
             

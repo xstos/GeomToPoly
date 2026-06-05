@@ -6,7 +6,7 @@ internal struct Glyph
 {
     internal Rect Bounds;
     internal Polygon[] Shapes;
-
+    
     internal Glyph Rotate(double angle)
     {
         /*
@@ -32,6 +32,17 @@ internal struct Glyph
         }
         */
         return this;
+    }
+}
+
+internal static class GExt
+{
+    internal static (int glyphWidth, int glyphHeight) Size(this Glyph g)
+    {
+        return (
+            (int)Math.Round(g.Bounds.Width, MidpointRounding.AwayFromZero),
+            (int)Math.Round(g.Bounds.Height, MidpointRounding.AwayFromZero)
+        );
     }
 }
 internal struct Polygon

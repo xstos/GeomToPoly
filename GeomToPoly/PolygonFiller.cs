@@ -43,6 +43,7 @@ internal static class PolygonFiller
         var polyX = p.x;
         var polyY = p.y;
         int polyCorners = polyX.Length;
+        int polyCornersSub1 = polyCorners - 1;
         if (polyCorners < 3)
         {
             yield break;
@@ -50,20 +51,23 @@ internal static class PolygonFiller
         int startY = (int)Math.Ceiling(p.Bounds.Top);
         int endY = (int)Math.Floor(p.Bounds.Bottom);
 
-        var nodeX = new List<int>();
+        var nodeX = new List<int>(20);
 
         for (int pixelY = startY; pixelY <= endY; pixelY++)
         {
             nodeX.Clear();
 
-            int j = polyCorners - 1;
+            int j = polyCornersSub1;
             for (int i = 0; i < polyCorners; i++)
             {
                 // Check if edge crosses the current scanline
-                if (polyY[i] < pixelY && polyY[j] >= pixelY || polyY[j] < pixelY && polyY[i] >= pixelY)
+                var pyi = polyY[i];
+                var pyj = polyY[j];
+                if (pyi < pixelY && pyj >= pixelY || pyj < pixelY && pyi >= pixelY)
                 {
                     // Calculate intersection X coordinate
-                    double intersectX = polyX[i] + (pixelY - polyY[i]) / (polyY[j] - polyY[i]) * (polyX[j] - polyX[i]);
+                    var pxi = polyX[i];
+                    double intersectX = pxi + (pixelY - pyi) / (pyj - pyi) * (polyX[j] - pxi);
                     nodeX.Add((int)intersectX);
                 }
                 j = i;
