@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using ColorMine.ColorSpaces;
 
 [assembly: ThemeInfo(ResourceDictionaryLocation.None, ResourceDictionaryLocation.SourceAssembly)]
 
@@ -26,7 +27,8 @@ public class Program
 
     static Func<int> MakeGetNextColor()
     {
-        var enu = ColorWheel().GetEnumerator();
+        //var enu = ColorWheel().GetEnumerator();
+        var enu = GetHues(2000).GetEnumerator();
         int Next()
         {
             enu.MoveNext();
@@ -41,7 +43,7 @@ public class Program
     {
         var app = new Application();
 
-        var FontSize = 20;
+        var FontSize = 13;
         var fontName = "Jetbrains Mono";
         var typeface = new Typeface(new FontFamily(fontName), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
         var nextColor = MakeGetNextColor();
@@ -62,7 +64,7 @@ public class Program
 
         var txt = Res("GeomToPoly.twist.txt"); /*.Replace("W","W█"); */
         //var txt = new WebClient().DownloadString("https://www.gutenberg.org/cache/epub/730/pg730.txt");
-        var chars = txt.Distinct();
+        var chars = txt.Distinct().ToArray();
         var max = chars.Max(c => (int)c)+1;
         Console.WriteLine("last char index "+max);
         var glyphs = new Glyph[max];
@@ -80,10 +82,16 @@ public class Program
             using var _ = timer("make glyphs");
             glyphWidth = int.MinValue;
             glyphHeight = int.MinValue;
-            foreach (var c in chars)
+            Parallel.For(0, chars.Length, i =>
             {
+                var c = chars[i];
                 var g = MakeGlyph(c);
                 glyphs[c] = g;
+            });
+            
+            foreach (var c in chars)
+            {
+                var g = glyphs[c];
                 var (w, h) = g.Size();
                 if (w > glyphWidth) glyphWidth = w;
                 if (h > glyphHeight) glyphHeight = h;
@@ -91,7 +99,7 @@ public class Program
         }
         MakeGlyphs();
 
-        var popts = new ParallelOptions() { MaxDegreeOfParallelism = 1 };
+        var popts = new ParallelOptions() { MaxDegreeOfParallelism = 12 };
         HLineInfo singleGlyphLineInfo = new HLineInfo(1200);
         HLineInfo wholeLineInfo = new HLineInfo(1200);
         
@@ -172,11 +180,11 @@ public class Program
             var numCols = pixelBufferWidth / glyphWidth;
             var numRows = pixelBufferHeight / glyphHeight;
             
-            for (int i = 0; i < numRows - 1; i++)
+            for (int i = 0; i < numRows; i++)
             {
                 var lineIndex = i+lineOffset;
                 var line = lines[lineIndex];
-                var lineLength = line.Length - 1;
+                var lineLength = line.Length;
                 var yoffs = i * glyphHeight;
                 for (int j = 0; j < Math.Min(numCols,lineLength); j++)
                 {
@@ -212,7 +220,8 @@ public class Program
                     singleGlyphUsedRowIndexes.Clear();
                 }
             }
-            
+
+            var lastIx = pixels.Length - 1;
             Parallel.For(0, wholeRows.Length,popts, i =>
             {
                 var verts = wholeRows[i];
@@ -222,7 +231,7 @@ public class Program
                     var (x1, x2) = (c[0], c[1]);
                     var startIndex = i * pixelBufferWidth + x1;
                     var count = x2 - x1 + 1;
-                    
+                    if (startIndex>lastIx || startIndex+count>lastIx) continue;
                     Array.Fill(pixels, brushes[x1].ForegroundColor, startIndex, count);
                 }
 
@@ -272,5 +281,23 @@ public class Program
         using Stream stream = assembly.GetManifestResourceStream(resourceName);
         using StreamReader reader = new StreamReader(stream);
         return reader.ReadToEnd();
+    }
+    static IEnumerable<int> GetHues(int numColors)
+    {
+        var hue = 0.0;
+        var inc = 360.0 / numColors;
+
+        while (true)
+        {
+            var hsl = new Hsl() { H = hue, S = 100, L = 50 };
+            var rgb = hsl.ToRgb();
+            byte r = (byte)rgb.R;
+            byte g = (byte)rgb.G;
+            byte b = (byte)rgb.B;
+            var ret = BitConverter.ToInt32([b,g,r,255]); //argb
+            hue += inc;
+            if (hue > 360.0) hue = 0;
+            yield return ret;
+        }
     }
 }
